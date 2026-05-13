@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	"blitznote.com/src/semver/v3"
@@ -84,35 +85,68 @@ func findMinimumSupported(target Target, tests []TestDescription) (*semver.Range
 			continue
 		}
 
-		// We need to find the minimum version of the target module by looking
-		// through the dependencies list and the inspecting the semver range
-		// strings associated with it.
-		for key, val := range test.Dependencies {
-			if key != target.Name {
+		if test.Dependencies != nil {
+			// We need to find the minimum version of the target module by looking
+			// through the dependencies list and the inspecting the semver range
+			// strings associated with it.
+			for key, val := range test.Dependencies {
+				if key != target.Name {
+					continue
+				}
+
+				var currentVersion semver.Range
+
+				// The semver library does not parse strings like `>1.0.0 <2.0.0 || >3.0.0`.
+				// So we need to split it up and normalize the pieces into range strings
+				// it can understand.
+				rangeStrings := strings.Split(val.Versions, "||")
+				for k, v := range rangeStrings {
+					// Oh, Go, why no slices.Map?
+					rangeStrings[k] = normalizeRangeString(v)
+				}
+
+				currentVersion, err := processRangeStrings(rangeStrings)
+				if err != nil {
+					return nil, fmt.Errorf("`%s` => `%s`: %w", target, val.Versions, err)
+				}
+
+				if lastVersion == nil {
+					lastVersion = &currentVersion
+					continue
+				}
+
+				if isRangeLower(currentVersion, *lastVersion) == true {
+					lastVersion = &currentVersion
+				}
+			}
+		} else if test.GroupedDependencies != nil {
+			// As above, but for a `groupedDependencies` block instead. We should
+			// always have one or the other.
+			if slices.Contains(test.GroupedDependencies.Packages, target.Name) == false {
+				// We are trying to find the minimum version across all defined "test"
+				// blocks for the given `target`. So we cannot return an error here
+				// if the `target` is not found in the grouped packages list.
 				continue
 			}
 
 			var currentVersion semver.Range
-
-			// The semver library does not parse strings like `>1.0.0 <2.0.0 || >3.0.0`.
-			// So we need to split it up and normalize the pieces into range strings
-			// it can understand.
-			rangeStrings := strings.Split(val.Versions, "||")
+			rangeStrings := strings.Split(test.GroupedDependencies.Version, "||")
 			for k, v := range rangeStrings {
-				// Oh, Go, why no slices.Map?
 				rangeStrings[k] = normalizeRangeString(v)
 			}
-
 			currentVersion, err := processRangeStrings(rangeStrings)
 			if err != nil {
-				return nil, fmt.Errorf("`%s` => `%s`: %w", target, val.Versions, err)
+				return nil, fmt.Errorf(
+					"`%s` => `%s`: %w",
+					target,
+					test.GroupedDependencies.Version,
+					err,
+				)
 			}
-
 			if lastVersion == nil {
 				lastVersion = &currentVersion
 				continue
 			}
-
 			if isRangeLower(currentVersion, *lastVersion) == true {
 				lastVersion = &currentVersion
 			}

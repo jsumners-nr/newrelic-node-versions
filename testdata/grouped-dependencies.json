@@ -1,0 +1,29 @@
+{
+  "name": "baseline-test",
+  "comment": "Verifies that our tool can find targets in both `dependencies` and `groupedDependencies`.",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "targets": [
+    {"name":  "foo", "minAgentVersion": "1.0.0"},
+    {"name":  "baz", "minAgentVersion":  "1.0.0"}
+  ],
+  "tests": [
+    {
+      "dependencies": {
+        "foo": {
+          "versions": ">=4.0.0",
+          "samples": "2"
+        }
+      },
+      "files": ["test1.js"]
+    },
+    {
+      "groupedDependencies": {
+          "version": ">=5.0.0",
+          "packages": ["bar", "baz"]
+      },
+      "files": ["test2.js"]
+    }
+  ]
+}

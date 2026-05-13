@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+
 	"github.com/spf13/cast"
 )
 
@@ -72,11 +73,12 @@ type VersionedTestPackageJson struct {
 }
 
 type TestDescription struct {
-	Supported    bool              `json:"supported"`
-	Comment      string            `json:"comment"`
-	Engines      EnginesBlock      `json:"engines"`
-	Dependencies DependenciesBlock `json:"dependencies"`
-	Files        FilesBlock        `json:"files"`
+	Supported           bool                    `json:"supported"`
+	Comment             string                  `json:"comment"`
+	Engines             EnginesBlock            `json:"engines"`
+	Dependencies        DependenciesBlock       `json:"dependencies"`
+	GroupedDependencies *GroupedDependencyBlock `json:"groupedDependencies"`
+	Files               FilesBlock              `json:"files"`
 }
 
 func (td *TestDescription) UnmarshalJSON(data []byte) error {
@@ -124,6 +126,13 @@ func (td *TestDescription) UnmarshalJSON(data []byte) error {
 				return err
 			}
 			td.Dependencies = deps
+		case "groupedDependencies":
+			var deps GroupedDependencyBlock
+			err := json.Unmarshal(*val, &deps)
+			if err != nil {
+				return err
+			}
+			td.GroupedDependencies = &deps
 		case "files":
 			var files FilesBlock
 			err := json.Unmarshal(*val, &files)
@@ -148,6 +157,11 @@ type DependenciesBlock map[string]DependencyBlock
 type DependencyBlock struct {
 	Versions string `json:"versions"`
 	Samples  int    `json:"samples"`
+}
+
+type GroupedDependencyBlock struct {
+	Version  string   `json:"version"`
+	Packages []string `json:"packages"`
 }
 
 func (db *DependenciesBlock) UnmarshalJSON(data []byte) error {
@@ -207,6 +221,33 @@ func (db *DependencyBlock) UnmarshalJSON(data []byte) error {
 	}
 	strVersions := string(*versions)
 	db.Versions = strVersions[1 : len(strVersions)-1]
+
+	return nil
+}
+
+func (gd *GroupedDependencyBlock) UnmarshalJSON(data []byte) error {
+	if bytes.Compare(data, []byte("null")) == 0 {
+		return nil
+	}
+
+	var decoded map[string]*json.RawMessage
+	_ = json.Unmarshal(data, &decoded)
+
+	version := decoded["version"]
+	if version == nil {
+		return fmt.Errorf("missing version property: %s", data)
+	}
+	strVersion := string(*version)
+	gd.Version = strVersion[1 : len(strVersion)-1]
+
+	var packages []string
+	err := json.Unmarshal(*decoded["packages"], &packages)
+	if err != nil {
+		return fmt.Errorf("failed to decode packages property: %w", err)
+	} else if packages == nil {
+		return fmt.Errorf("missing packages property: %w", err)
+	}
+	gd.Packages = packages
 
 	return nil
 }
